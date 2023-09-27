@@ -153,12 +153,18 @@ contract LockToken is Pausable {
     }
 
     struct LockTokenSituation {
+        // default lockToken: 1 lockToken: 2
+        uint8 isDefaultLockToken;
         // personal: 1 shop: 2
         uint8 description;
+        // Default lockToken
+        uint32 nextReleaseTimes;
         uint32 lockStart;
         uint32 lockEnd;
         bool isReleaseToken;
         uint256 currentLockTokenBalances;
+        // Default lockToken (currentLockTokenBalances >= alreadyReleasedTokenBalances)
+        uint256 alreadyReleasedTokenBalances;
     }
 
     struct AllUsersDetailsAndLockTokenSituation {
@@ -172,6 +178,12 @@ contract LockToken is Pausable {
     address private _owner;
     address private owner;
     
+    // Shared slot x...
+    uint32 public defaultReleaseTokenTimes = 30 days;
+    // Detail release token reward, can be owner modifier
+    uint64 public defaultReleaseTokenReward = 1500;
+
+    // Shared slot y...
     // Lock days, can be owner modifier
     uint32 public lockTimes = 15 days;
     // Detail lock days, can be owner modifier
@@ -246,11 +258,14 @@ contract LockToken is Pausable {
         if (_lockTokenUserDetail[msg.sender].teamLeader == address(0)) revert NotBindTeamLeader();
 
         _lockTokenSituation[msg.sender].push(LockTokenSituation({
+            isDefaultLockToken: 2,
             description: desc,
+            nextReleaseTimes: 0,
             lockStart: uint32(block.timestamp),
             lockEnd: uint32(block.timestamp) + uint32(lockTimes),
             isReleaseToken: false,
-            currentLockTokenBalances: amount
+            currentLockTokenBalances: amount,
+            alreadyReleasedTokenBalances: 0
         }));
         bool success = token.transferFrom(msg.sender, address(this), amount);
         if (!success) revert NotAllowedOperation();
@@ -264,11 +279,14 @@ contract LockToken is Pausable {
         if (_lockTokenUserDetail[msg.sender].teamLeader == address(0)) revert NotBindTeamLeader();
 
         _lockTokenSituation[msg.sender].push(LockTokenSituation({
+            isDefaultLockToken: 1,
             description: desc,
+            nextReleaseTimes: uint32(block.timestamp) + uint32(defaultReleaseTokenTimes),
             lockStart: uint32(block.timestamp),
             lockEnd: uint32(block.timestamp) + uint32(defaultLockTimes),
             isReleaseToken: false,
-            currentLockTokenBalances: amount
+            currentLockTokenBalances: amount,
+            alreadyReleasedTokenBalances: 0
         }));
         bool success = token.transferFrom(msg.sender, address(this), amount);
         if (!success) revert NotAllowedOperation();
@@ -282,6 +300,7 @@ contract LockToken is Pausable {
      * @param   lockTokenIndex  lock token index, like. [lockTokenA, lockTokenB, lockTokenC]
      */
     function releaseToken(uint256 lockTokenIndex) external whenNotPaused payable {
+        if (_lockTokenSituation[msg.sender][lockTokenIndex].isDefaultLockToken == 1) revert NotAllowedOperation();
         if (block.timestamp < _lockTokenSituation[msg.sender][lockTokenIndex].lockEnd) revert IncorrectReleaseTokenTimeStamp();
         uint256 releaseTokenAmount = _lockTokenSituation[msg.sender][lockTokenIndex].currentLockTokenBalances;
         
@@ -326,6 +345,64 @@ contract LockToken is Pausable {
         );
     }
 
+    function defaultReleaseToken(uint256 lockTokenIndex) external whenNotPaused payable {
+        if (_lockTokenSituation[msg.sender][lockTokenIndex].isDefaultLockToken == 2) revert NotAllowedOperation();
+        //if (_lockTokenSituation[msg.sender][lockTokenIndex].alreadyReleasedTokenBalances == _lockTokenSituation[msg.sender][lockTokenIndex].currentLockTokenBalances) revert NotAllowedOperation();
+        if (
+            block.timestamp < _lockTokenSituation[msg.sender][lockTokenIndex].nextReleaseTimes ||
+            block.timestamp < _lockTokenSituation[msg.sender][lockTokenIndex].lockEnd
+        ) revert IncorrectReleaseTokenTimeStamp();
+        if (_lockTokenSituation[msg.sender][lockTokenIndex].isReleaseToken) revert HadAlreadyReleaseToken();
+
+        // Released all token amounts.
+        uint256 releaseTokenAmount;
+        if (block.timestamp > _lockTokenSituation[msg.sender][lockTokenIndex].lockEnd) {
+            unchecked {
+                // Release token amount: locktokenAmount - alreadyReleasedTokenAmount
+                // If the alreadyReleasedTokenAmount quantity is zero, then release all lock token amount, lockAmount: 1000 - 0 = 1000
+                releaseTokenAmount = _lockTokenSituation[msg.sender][lockTokenIndex].currentLockTokenBalances - _lockTokenSituation[msg.sender][lockTokenIndex].alreadyReleasedTokenBalances;
+                _lockTokenSituation[msg.sender][lockTokenIndex].alreadyReleasedTokenBalances = _lockTokenSituation[msg.sender][lockTokenIndex].currentLockTokenBalances;
+            }
+
+            _lockTokenSituation[msg.sender][lockTokenIndex].isReleaseToken = true;
+        } else {
+            uint256 preReleaseTokenAmount;
+            unchecked {
+                // ReleaseToken amount: currentTokenAmount * 15%
+                preReleaseTokenAmount = (_lockTokenSituation[msg.sender][lockTokenIndex].currentLockTokenBalances * defaultReleaseTokenReward) / 10000;
+            }
+
+            // If releaseTokenAmount(currentTokenAmount * 15%) > currentLockTokenBalances - alreadyReleasedTokenAmount,
+            // then releaseTokenAmount = currentLockTokenBalances - alreadyReleasedTokenAmount(All unlock token amount)
+            if (preReleaseTokenAmount > _lockTokenSituation[msg.sender][lockTokenIndex].currentLockTokenBalances - _lockTokenSituation[msg.sender][lockTokenIndex].alreadyReleasedTokenBalances) {
+                unchecked {
+                    releaseTokenAmount = _lockTokenSituation[msg.sender][lockTokenIndex].currentLockTokenBalances - _lockTokenSituation[msg.sender][lockTokenIndex].alreadyReleasedTokenBalances;
+                }
+                _lockTokenSituation[msg.sender][lockTokenIndex].isReleaseToken = true;         
+            } else {
+                releaseTokenAmount = preReleaseTokenAmount;
+            }
+
+            _lockTokenSituation[msg.sender][lockTokenIndex].nextReleaseTimes += defaultReleaseTokenTimes;
+            // Ensure that the alreadyReleasedTokenBalances <= currentLockTokenBalances, and
+            // update released token amount.
+            _lockTokenSituation[msg.sender][lockTokenIndex].alreadyReleasedTokenBalances += releaseTokenAmount;
+        }
+        try token.transfer(msg.sender, releaseTokenAmount) {} catch {revert ContractInsuffAmountReward(token.balanceOf(address(this)));}
+
+        // Ignore all event unnecessary params. like: referrer, referrerRewardAmount...
+        emit ReleasedToken(
+            msg.sender, 
+            releaseTokenAmount, 
+            block.timestamp, 
+            address(0),
+            0,
+            address(0),
+            0
+        );
+
+    }
+
     function ownerReleaseToken() external whenNotPaused {
         if (msg.sender != _owner) revert NotAllowedOperation();
         for (uint i = 0; i < _allUsers.length; ) {
@@ -368,6 +445,16 @@ contract LockToken is Pausable {
         lockTimes = newTimes;
     }
 
+    function changeDefaultLockTimes(uint32 newTimes) external {
+        if (msg.sender != _owner) revert NotAllowedOperation();
+        defaultLockTimes = newTimes;
+    }
+
+    function changeDefaultReleaseTokenTimes(uint32 newTimes) external {
+        if (msg.sender != _owner) revert NotAllowedOperation();
+        defaultReleaseTokenTimes = newTimes;
+    }
+
     function changeReferrerReward(uint64 newReward) external {
         if (msg.sender != _owner) revert NotAllowedOperation();
         referrerReward = newReward;
@@ -381,6 +468,11 @@ contract LockToken is Pausable {
     function changeTeamLeaderReward(uint64 newReward) external {
         if (msg.sender != _owner) revert NotAllowedOperation();
         teamLeaderReward = newReward;
+    }
+
+    function changeDefaultReleaseTokenReward(uint64 newReward) external {
+        if (msg.sender != _owner) revert NotAllowedOperation();
+        defaultReleaseTokenReward = newReward;
     }
 
     function changeIToken(address newToken) external {
