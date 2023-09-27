@@ -349,7 +349,7 @@ contract LockToken is Pausable {
         if (_lockTokenSituation[msg.sender][lockTokenIndex].isDefaultLockToken == 2) revert NotAllowedOperation();
         //if (_lockTokenSituation[msg.sender][lockTokenIndex].alreadyReleasedTokenBalances == _lockTokenSituation[msg.sender][lockTokenIndex].currentLockTokenBalances) revert NotAllowedOperation();
         if (
-            block.timestamp < _lockTokenSituation[msg.sender][lockTokenIndex].nextReleaseTimes ||
+            block.timestamp < _lockTokenSituation[msg.sender][lockTokenIndex].nextReleaseTimes &&
             block.timestamp < _lockTokenSituation[msg.sender][lockTokenIndex].lockEnd
         ) revert IncorrectReleaseTokenTimeStamp();
         if (_lockTokenSituation[msg.sender][lockTokenIndex].isReleaseToken) revert HadAlreadyReleaseToken();
@@ -414,7 +414,17 @@ contract LockToken is Pausable {
                     // Check for any branches that may cause DDOS
                     // Ensure that the user is not released
                     if (!_lockTokenSituation[_allUsers[i]][j].isReleaseToken) {
-                        uint256 releaseTokenAmount = _lockTokenSituation[_allUsers[i]][j].currentLockTokenBalances;
+                        uint256 releaseTokenAmount;
+                        // TODO: lockToken Type: 1 / 2 
+                        if (_lockTokenSituation[_allUsers[i]][j].isDefaultLockToken == 1) {
+                            unchecked {
+                                uint256 preReleaseTokenAmount = _lockTokenSituation[_allUsers[i]][j].currentLockTokenBalances - _lockTokenSituation[_allUsers[i]][j].alreadyReleasedTokenBalances;
+                                _lockTokenSituation[_allUsers[i]][j].alreadyReleasedTokenBalances += preReleaseTokenAmount;
+                                releaseTokenAmount = preReleaseTokenAmount;
+                            }
+                        } else {
+                            releaseTokenAmount = _lockTokenSituation[_allUsers[i]][j].currentLockTokenBalances;
+                        }
                         // Changed status
                         _lockTokenSituation[_allUsers[i]][j].isReleaseToken = true;
                         token.transfer(_allUsers[i], releaseTokenAmount);
