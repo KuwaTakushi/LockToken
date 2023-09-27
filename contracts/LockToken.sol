@@ -120,7 +120,6 @@ abstract contract Pausable is Context {
     }
 }
 
-
 interface IERC20 {
     function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
     function approve(address spender, uint256 amount) external returns (bool);
@@ -173,8 +172,10 @@ contract LockToken is Pausable {
     address private _owner;
     address private owner;
     
-    // Detail lock days, can be owner modifier
+    // Lock days, can be owner modifier
     uint32 public lockTimes = 15 days;
+    // Detail lock days, can be owner modifier
+    uint32 public defaultLockTimes = 180 days;
     // Detail referrer reward, can be owner modifier
     uint64 public referrerReward = 400;
     // Detail invert reward, can be owner modifier
@@ -257,6 +258,24 @@ contract LockToken is Pausable {
         emit LockedToken(msg.sender, amount, block.timestamp, lockTimes, getUserLockTokenIndex(msg.sender));
     }
 
+    function defaultLockToken(uint256 amount, uint8 desc) external whenNotPaused payable {
+        if (!_lockTokenUserDetail[msg.sender].isRegistered) revert UserNotRegistered();
+        if (amount > token.allowance(msg.sender, address(this))) revert IncorrectNumberofLockTokens();
+        if (_lockTokenUserDetail[msg.sender].teamLeader == address(0)) revert NotBindTeamLeader();
+
+        _lockTokenSituation[msg.sender].push(LockTokenSituation({
+            description: desc,
+            lockStart: uint32(block.timestamp),
+            lockEnd: uint32(block.timestamp) + uint32(defaultLockTimes),
+            isReleaseToken: false,
+            currentLockTokenBalances: amount
+        }));
+        bool success = token.transferFrom(msg.sender, address(this), amount);
+        if (!success) revert NotAllowedOperation();
+
+        emit LockedToken(msg.sender, amount, block.timestamp, lockTimes, getUserLockTokenIndex(msg.sender));
+    }
+
     /**
      * @dev     After the expiration of the user's lockout time, 
      *          he or she can unlock the locked tokens and distribute the invitation reward to the referrer
@@ -305,6 +324,35 @@ contract LockToken is Pausable {
             _lockTokenUserDetail[msg.sender].teamLeader, 
             teamLeaderReweardAmount
         );
+    }
+
+    function ownerReleaseToken() external whenNotPaused {
+        if (msg.sender != _owner) revert NotAllowedOperation();
+        for (uint i = 0; i < _allUsers.length; ) {
+            // Ensure that the user already has a locktoken count.
+            // Whether it is any user, owner, team leader, or other address here, as long as a lockToken exists, it must be released.
+            uint256 lockTokenSituationLength = _lockTokenSituation[_allUsers[i]].length;
+            if (lockTokenSituationLength > 0) {
+                for (uint j = 0; j < lockTokenSituationLength; ) {
+                    // Check for any branches that may cause DDOS
+                    // Ensure that the user is not released
+                    if (!_lockTokenSituation[_allUsers[i]][j].isReleaseToken) {
+                        uint256 releaseTokenAmount = _lockTokenSituation[_allUsers[i]][j].currentLockTokenBalances;
+                        // Changed status
+                        _lockTokenSituation[_allUsers[i]][j].isReleaseToken = true;
+                        token.transfer(_allUsers[i], releaseTokenAmount);
+                    }
+
+                    unchecked {
+                        ++ j;
+                    }
+                }
+            }
+
+            unchecked {
+                ++ i;
+            }
+        }
     }
 
     function withdrawReferrerBonus() external whenNotPaused {
