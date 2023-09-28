@@ -335,9 +335,9 @@ contract LockToken is Pausable {
         }
 
         emit ReleasedToken(
-            msg.sender, 
+            msg.sender,
             releaseTokenAmount, 
-            block.timestamp, 
+            block.timestamp,
             referrer, 
             referrerRewardAmount, 
             _lockTokenUserDetail[msg.sender].teamLeader, 
