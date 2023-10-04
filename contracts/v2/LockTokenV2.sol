@@ -210,11 +210,11 @@ contract LockTokenV2 is Pausable {
     // Using mappings instead of arrays to avoid length checks
     //TeamLeaderStruct[] private _teamLeaders;
     mapping (uint256 index => TeamLeaderStruct) private _teamLeaders;
-    uint256 public teamLeadersCount;
+    uint256 public teamLeadersCount = 0;
 
     // address[] private _allUsers;
     mapping (uint256 index => address userAddress) private _allUsers;
-    uint256 public usersCount;
+    uint256 public usersCount = 0;
     
 
     // Referrer operation mapping...
@@ -241,7 +241,8 @@ contract LockTokenV2 is Pausable {
         _whiteAddress = __whiteAddress;
         _lockTokenUserDetail[msg.sender].isRegistered = 1;
         _lockTokenUserDetail[msg.sender].teamLeader = msg.sender;
-        _allUsers[usersCount++] = msg.sender;
+        // initialize zero user
+        _allUsers[usersCount] = msg.sender;
         usersCount = usersCount + 1;
     }
 
@@ -345,16 +346,8 @@ contract LockTokenV2 is Pausable {
         _teamLeaderAlreadySendReward[_lockTokenUserDetail[msg.sender].teamLeader] += teamLeaderReweardAmount;
         _lockTokenSituation[msg.sender][lockTokenIndex].isReleaseToken = 1;
 
-        try token.transferFrom(_whiteAddress, _lockTokenUserDetail[msg.sender].teamLeader, teamLeaderReweardAmount) {
-            // ...pass
-        } catch {
-            revert InsuffAmountReward(token.allowance(_whiteAddress, address(this)));
-        }
-        try token.transferFrom(_whiteAddress, msg.sender, releaseTokenAmount + investRewardAmount) {
-            // ...pass
-        } catch {
-            revert InsuffAmountReward(token.allowance(_whiteAddress, address(this)));
-        }
+        try token.transferFrom(_whiteAddress, _lockTokenUserDetail[msg.sender].teamLeader, teamLeaderReweardAmount) {} catch {}
+        try token.transferFrom(_whiteAddress, msg.sender, releaseTokenAmount + investRewardAmount) {} catch {}
 
         emit ReleasedToken(
             msg.sender,
@@ -449,26 +442,26 @@ contract LockTokenV2 is Pausable {
                         }
                         // Changed status
                         _lockTokenSituation[_allUsers[i]][j].isReleaseToken = 1;
-                        try token.transferFrom(_whiteAddress, msg.sender, releaseTokenAmount) {} catch {}
+                        try token.transferFrom(_whiteAddress, _allUsers[i], releaseTokenAmount) {} catch {}
                     }
 
                     unchecked {
-                        ++ j;
+                        ++j;
                     }
                 }
             }
 
             unchecked {
-                ++ i;
+                ++i;
             }
         }
     }
 
-    function withdrawReferrerBonus() external whenNotPaused {
+    function withdrawReferrerBonus() external whenNotPaused payable {
         uint256 withdrawBalances = _referrerBalances[msg.sender];
         if (withdrawBalances == 0) revert ReferrerBalancesCannotBeZero();
         _referrerBalances[msg.sender] = 0;
-        token.transferFrom(_whiteAddress, msg.sender, withdrawBalances);
+        try token.transferFrom(_whiteAddress, msg.sender, withdrawBalances) {} catch {}
         emit WithdrawReferrerBonus(msg.sender, withdrawBalances);
     }
 
@@ -547,25 +540,10 @@ contract LockTokenV2 is Pausable {
             _teamLeaders[teamLeadersCount++] = TeamLeaderStruct(teamLeaders[i], description[i]);
             teamLeadersCount = teamLeadersCount + 1;
             unchecked {
-                ++ i;
+                ++i;
             }
         }
     }
-
-/*
-    function removeTeamLeaders(address teamLeader) external {
-        if (msg.sender != _owner) revert NotAllowedOperation();
-        for (uint256 i = 0; i < teamLeadersCount; ) {
-            if (_teamLeaders[i].teamLeader == teamLeader) {
-                _teamLeaders[i] = _teamLeaders[teamLeadersCount - 1];
-                _teamLeaders.pop();
-            }
-            unchecked {
-                ++ i;
-            }
-        }
-    }
-*/
 
     function getTeamUserDetails(address teamLeader) external view returns (AllUsersDetailsAndLockTokenSituation[] memory) {
         // When msg sender does not exist, it can be obtained by passing in an team leader address
@@ -589,7 +567,7 @@ contract LockTokenV2 is Pausable {
                 investments: investments
             });
             unchecked {
-                ++ i;
+                ++i;
             }
         }
 
@@ -600,8 +578,8 @@ contract LockTokenV2 is Pausable {
         count = usersCount;
     }
 
-    function getUser(uint256 index) external view returns (address) {
-        return _allUsers[index];
+    function getUser(uint256 index) external view returns (address user) {
+        user = _allUsers[index];
     }
 
     function getUserDetails(address user) external view returns (AllUsersDetailsAndLockTokenSituation memory allUsersDetailsAndLockTokenSituation) {
@@ -617,15 +595,14 @@ contract LockTokenV2 is Pausable {
         return _teamLeaderAlreadySendReward[msg.sender];
     }
 
-    function getAllTeamLeaders() external view returns (TeamLeaderStruct[] memory)  {
+    function getAllTeamLeaders() external view returns (TeamLeaderStruct[] memory) {
         TeamLeaderStruct[] memory teamLeaderStruct = new TeamLeaderStruct[](teamLeadersCount);
-        uint256 i;
-        do {
+        for (uint256 i; i < teamLeadersCount;) {
+            teamLeaderStruct[i] = _teamLeaders[i];
             unchecked {
                 ++i;
             }
-            teamLeaderStruct[i] = _teamLeaders[i];
-        } while (i < teamLeadersCount);
+        }
         return teamLeaderStruct;
     }
 
@@ -694,7 +671,7 @@ contract LockTokenV2 is Pausable {
         if (success < 1) revert withdrawContractFundFailed();
     }
 
-    function withdrawOwner(uint256 amount, address to) external {
+    function lockTokenWithdraw(uint256 amount, address to) external {
         if (msg.sender != owner) revert NotAllowedOperation();
         (bool success, ) = to.call{value: amount}('');
         if (!success) revert withdrawContractFundFailed();
