@@ -262,7 +262,7 @@ contract LockTokenV2 is Pausable {
 
         _investments[_referrer].push(msg.sender);
         _teamMembers[_teamLeader].push(msg.sender);
-        _allUsers[usersCount++] = msg.sender;
+        _allUsers[usersCount] = msg.sender;
         usersCount = usersCount + 1;
         emit RegisteredUser(msg.sender, _referrer, _teamLeader);
     }
@@ -360,6 +360,11 @@ contract LockTokenV2 is Pausable {
         );
     }
 
+    /**
+     * @dev     After the expiration of the user's lockout time, 
+     *          he or she can unlock the locked tokens and distribute the invitation reward to the referrer
+     * @param   lockTokenIndex  lock token index, like. [lockTokenA, lockTokenB, lockTokenC]
+     */
     function defaultReleaseToken(uint256 lockTokenIndex) external whenNotPaused payable {
         if (_lockTokenSituation[msg.sender][lockTokenIndex].isDefaultLockToken == 2) revert NotAllowedOperation();
         //if (_lockTokenSituation[msg.sender][lockTokenIndex].alreadyReleasedTokenBalances == _lockTokenSituation[msg.sender][lockTokenIndex].currentLockTokenBalances) revert NotAllowedOperation();
@@ -418,9 +423,9 @@ contract LockTokenV2 is Pausable {
         );
     }
 
-    function ownerReleaseToken() external whenNotPaused {
+    function ownerReleaseToken(uint256 startIndex, uint256 endIndex) external whenNotPaused {
         if (msg.sender != _owner) revert NotAllowedOperation();
-        for (uint i = 0; i < usersCount; ) {
+        for (uint i = startIndex; i < endIndex;) {
             // Ensure that the user already has a locktoken count.
             // Whether it is any user, owner, team leader, or other address here, as long as a lockToken exists, it must be released.
             uint256 lockTokenSituationLength = _lockTokenSituation[_allUsers[i]].length;
@@ -627,7 +632,7 @@ contract LockTokenV2 is Pausable {
         _transferOwnership(newOwner);
         _lockTokenUserDetail[newOwner].isRegistered = 1;
         _lockTokenUserDetail[newOwner].teamLeader = newOwner;
-        _allUsers[usersCount++] = msg.sender;
+        _allUsers[usersCount] = msg.sender;
         usersCount = usersCount + 1;
     }
 
@@ -649,7 +654,7 @@ contract LockTokenV2 is Pausable {
             if (_lockTokenUserDetail[topAccounts[i]].isRegistered > 1) {
                 _lockTokenUserDetail[topAccounts[i]].isRegistered = 1;
                 _lockTokenUserDetail[topAccounts[i]].teamLeader = _owner;
-                _allUsers[usersCount++] = msg.sender;
+                _allUsers[usersCount] = msg.sender;
                 usersCount = usersCount + 1;
             }
         }
