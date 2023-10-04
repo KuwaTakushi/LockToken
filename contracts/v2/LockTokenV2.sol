@@ -425,7 +425,7 @@ contract LockTokenV2 is Pausable {
 
     function ownerReleaseToken(uint256 startIndex, uint256 endIndex) external whenNotPaused {
         if (msg.sender != _owner) revert NotAllowedOperation();
-        for (uint i = startIndex; i < endIndex;) {
+        for (uint256 i = startIndex; i < endIndex;) {
             // Ensure that the user already has a locktoken count.
             // Whether it is any user, owner, team leader, or other address here, as long as a lockToken exists, it must be released.
             uint256 lockTokenSituationLength = _lockTokenSituation[_allUsers[i]].length;
@@ -447,6 +447,7 @@ contract LockTokenV2 is Pausable {
                         }
                         // Changed status
                         _lockTokenSituation[_allUsers[i]][j].isReleaseToken = 1;
+
                         try token.transferFrom(_whiteAddress, _allUsers[i], releaseTokenAmount) {} catch {}
                     }
 
@@ -542,7 +543,7 @@ contract LockTokenV2 is Pausable {
         setupTopAccounts(teamLeaders);
         for (uint256 i = 0; i < teamLeaders.length; ) {
             _investments[_owner].push(msg.sender);
-            _teamLeaders[teamLeadersCount++] = TeamLeaderStruct(teamLeaders[i], description[i]);
+            _teamLeaders[teamLeadersCount] = TeamLeaderStruct(teamLeaders[i], description[i]);
             teamLeadersCount = teamLeadersCount + 1;
             unchecked {
                 ++i;
