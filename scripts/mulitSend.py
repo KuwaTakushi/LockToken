@@ -53,7 +53,7 @@ abi = [
 
 w3 = Web3(Web3.HTTPProvider('https://bsc-dataseed1.ninicoin.io'))
 
-private_key = 'e5dcc1ebe2152f03d2bc9b64557b7ea83ef266bf17e651d456acdf454016e649'
+private_key = ''
 account = w3.eth.account.from_key(private_key)
 approver =  "0x3Df8554B829998C38FF0b21d2c3aB53670410Bd4"
 
